@@ -107,11 +107,10 @@ var createGroupCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Creating repository: %s...\n", repoName)
-		stdOut, stdErr, err := gh.Exec("repo", "create", repoName, "--private")
+		_, stdErr, err := gh.Exec("repo", "create", repoName, "--private")
 		if err != nil {
 			log.Fatalf("Error creating repo: %v\nStderr: %s", err, stdErr.String())
 		}
-		fmt.Print(stdOut.String())
 
 		fmt.Println("Repository created successfully.")
 		return nil
@@ -139,13 +138,38 @@ var deleteGroupCmd = &cobra.Command{
 			return nil
 		}
 		fmt.Printf("Deleting repository: %s...\n", repoName)
-		stdOut, stdErr, err := gh.Exec("repo", "delete", repoName, "--yes")
+		_, stdErr, err := gh.Exec("repo", "delete", repoName, "--yes")
 		if err != nil {
 			log.Fatalf("Error deleting repo: %v\nStderr: %s", err, stdErr.String())
 		}
-		fmt.Print(stdOut.String())
 
 		fmt.Println("Repository deleted successfully.")
+		return nil
+	},
+}
+
+var addMemberCmd = &cobra.Command{
+	Use:   "addmember <group_name> <username>",
+	Short: "Add a member to a repository (group)",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoName := args[0]
+		username := args[1]
+		if err := ensureScope("repo"); err != nil {
+			return err
+		}
+		ownerOut, _, err := gh.Exec("api", "user", "-q", ".login")
+		if err != nil {
+			return fmt.Errorf("failed to get current user: %v", err)
+		}
+		owner := strings.TrimSpace(ownerOut.String())
+		fmt.Printf("Adding %s to %s...\n", username, repoName)
+		path := fmt.Sprintf("repos/%s/%s/collaborators/%s", owner, repoName, username)
+		_, _, err = gh.Exec("api", path, "-X", "PUT", "-f", "permission=push")
+		if err != nil {
+			return fmt.Errorf("failed to add member: %v", err)
+		}
+		fmt.Printf("Added %s to %s as a collaborator.\n", username, repoName)
 		return nil
 	},
 }
@@ -175,6 +199,7 @@ func main() {
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(createGroupCmd)
 	rootCmd.AddCommand(deleteGroupCmd)
+	rootCmd.AddCommand(addMemberCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
