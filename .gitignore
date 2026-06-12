@@ -7,7 +7,7 @@
 *.dll
 *.so
 *.dylib
-
+git-whatsapp
 # Test binary, built with `go test -c`
 *.test
 
