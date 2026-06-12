@@ -2,15 +2,26 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/cli/go-gh/v2"
 	"github.com/spf13/cobra"
 )
+
+type Message struct {
+	Author    string
+	Timestamp string
+	Body      string
+}
 
 func hasScope(scope string) bool {
 	stdOut, _, err := gh.Exec("auth", "status")
@@ -92,6 +103,145 @@ func ensureScope(scope string) error {
 	return nil
 }
 
+func getGitHubUsername() (string, error) {
+	stdOut, _, err := gh.Exec("api", "user", "-q", ".login")
+	if err != nil {
+		return "", fmt.Errorf("failed to get GitHub username: %v", err)
+	}
+	return strings.TrimSpace(stdOut.String()), nil
+}
+
+func resolveRepo(repo string) string {
+	if strings.Contains(repo, "/") {
+		return repo
+	}
+	username, err := getGitHubUsername()
+	if err != nil {
+		return repo
+	}
+	return username + "/" + repo
+}
+
+func cachePath(repoFull string) string {
+	parts := strings.SplitN(repoFull, "/", 2)
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cache", "git-chat", parts[0]+"-"+parts[1])
+}
+
+func cloneOrPull(repoFull, localPath string) error {
+	if _, err := os.Stat(filepath.Join(localPath, ".git")); os.IsNotExist(err) {
+		cmd := exec.Command("gh", "repo", "clone", repoFull, localPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	cmd := exec.Command("git", "-C", localPath, "fetch", "origin")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git fetch failed: %v", err)
+	}
+	cmd = exec.Command("git", "-C", localPath, "checkout", "main")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	_ = cmd.Run()
+	cmd = exec.Command("git", "-C", localPath, "reset", "--hard", "origin/main")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func generateFilename(username string) string {
+	timestamp := time.Now().UTC().Format("20060102T150405Z")
+	b := make([]byte, 3)
+	rand.Read(b)
+	suffix := hex.EncodeToString(b)
+	return timestamp + "_" + username + "_" + suffix + ".txt"
+}
+
+func parseFilename(name string) (author, timestamp string, err error) {
+	base := strings.TrimSuffix(name, ".txt")
+	parts := strings.SplitN(base, "_", 3)
+	if len(parts) != 3 {
+		return "", "", fmt.Errorf("invalid message filename: %s", name)
+	}
+	return parts[1], parts[0], nil
+}
+
+func sendMessage(repo, body string) error {
+	repoFull := resolveRepo(repo)
+	username, err := getGitHubUsername()
+	if err != nil {
+		return err
+	}
+	localPath := cachePath(repoFull)
+	if err := cloneOrPull(repoFull, localPath); err != nil {
+		return fmt.Errorf("failed to clone/pull repository: %v", err)
+	}
+	msgsDir := filepath.Join(localPath, "messages")
+	if err := os.MkdirAll(msgsDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create messages directory: %v", err)
+	}
+	filename := generateFilename(username)
+	filePath := filepath.Join(msgsDir, filename)
+	if err := os.WriteFile(filePath, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("failed to write message: %v", err)
+	}
+	cmd := exec.Command("git", "-C", localPath, "add", "messages/"+filename)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add failed: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "-C", localPath, "commit", "-m", fmt.Sprintf("message from %s", username))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit failed: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "-C", localPath, "push", "origin", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git push failed: %v\n%s", err, out)
+	}
+	return nil
+}
+
+func readMessages(repo string) ([]Message, error) {
+	repoFull := resolveRepo(repo)
+	localPath := cachePath(repoFull)
+	if err := cloneOrPull(repoFull, localPath); err != nil {
+		return nil, fmt.Errorf("failed to clone/pull repository: %v", err)
+	}
+	msgsDir := filepath.Join(localPath, "messages")
+	entries, err := os.ReadDir(msgsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("no messages yet in this group")
+		}
+		return nil, fmt.Errorf("failed to read messages: %v", err)
+	}
+	var filenames []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".txt") {
+			filenames = append(filenames, e.Name())
+		}
+	}
+	sort.Strings(filenames)
+	var messages []Message
+	for _, name := range filenames {
+		author, ts, err := parseFilename(name)
+		if err != nil {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(msgsDir, name))
+		if err != nil {
+			continue
+		}
+		messages = append(messages, Message{
+			Author:    author,
+			Timestamp: ts,
+			Body:      strings.TrimSpace(string(content)),
+		})
+	}
+	return messages, nil
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "git-chat",
 	Short: "A CLI tool for GitHub repo management",
@@ -158,11 +308,10 @@ var addMemberCmd = &cobra.Command{
 		if err := ensureScope("repo"); err != nil {
 			return err
 		}
-		ownerOut, _, err := gh.Exec("api", "user", "-q", ".login")
+		owner, err := getGitHubUsername()
 		if err != nil {
-			return fmt.Errorf("failed to get current user: %v", err)
+			return err
 		}
-		owner := strings.TrimSpace(ownerOut.String())
 		fmt.Printf("Adding %s to %s...\n", username, repoName)
 		path := fmt.Sprintf("repos/%s/%s/collaborators/%s", owner, repoName, username)
 		_, _, err = gh.Exec("api", path, "-X", "PUT", "-f", "permission=push")
@@ -170,6 +319,52 @@ var addMemberCmd = &cobra.Command{
 			return fmt.Errorf("failed to add member: %v", err)
 		}
 		fmt.Printf("Added %s to %s as a collaborator.\n", username, repoName)
+		return nil
+	},
+}
+
+var sendmsgCmd = &cobra.Command{
+	Use:   "sendmsg <group_name> <message>",
+	Short: "Send a message to a group",
+	Args:  cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repo := args[0]
+		message := strings.Join(args[1:], " ")
+		if err := ensureScope("repo"); err != nil {
+			return err
+		}
+		if err := sendMessage(repo, message); err != nil {
+			return err
+		}
+		fmt.Println("Message sent.")
+		return nil
+	},
+}
+
+var readmsgsCmd = &cobra.Command{
+	Use:   "readmsgs <group_name>",
+	Short: "Read messages from a group",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := ensureScope("repo"); err != nil {
+			return err
+		}
+		messages, err := readMessages(args[0])
+		if err != nil {
+			return err
+		}
+		if len(messages) == 0 {
+			fmt.Println("No messages yet.")
+			return nil
+		}
+		for _, msg := range messages {
+			t, err := time.Parse("20060102T150405Z", msg.Timestamp)
+			displayTime := msg.Timestamp
+			if err == nil {
+				displayTime = t.Local().Format("2006-01-02 15:04")
+			}
+			fmt.Printf("[%s] %s: %s\n", displayTime, msg.Author, msg.Body)
+		}
 		return nil
 	},
 }
@@ -200,6 +395,8 @@ func main() {
 	rootCmd.AddCommand(createGroupCmd)
 	rootCmd.AddCommand(deleteGroupCmd)
 	rootCmd.AddCommand(addMemberCmd)
+	rootCmd.AddCommand(sendmsgCmd)
+	rootCmd.AddCommand(readmsgsCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
