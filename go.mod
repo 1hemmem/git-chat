@@ -1,4 +1,4 @@
-module git-whatsapp
+module git-chat
 
 go 1.26.3
 

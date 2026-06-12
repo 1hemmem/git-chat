@@ -93,7 +93,7 @@ func ensureScope(scope string) error {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "git-whatsapp",
+	Use:   "git-chat",
 	Short: "A CLI tool for GitHub repo management",
 }
 
