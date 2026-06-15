@@ -29,6 +29,13 @@ var createGroupCmd = &cobra.Command{
 			log.Fatalf("Error creating repo: %v\nStderr: %s", err, stdErr.String())
 		}
 		fmt.Println("Repository created successfully.")
+		repoFull := repo.ResolveRepo(repoName)
+		_, stdErr, err = gh.Exec("repo", "edit", repoFull, "--add-topic", "chat-over-git-repo")
+		if err != nil {
+			// log.Fatalf("Error tagging repo: %v\nStderr: %s", err, stdErr.String())
+			return fmt.Errorf("creating repo: %s", strings.TrimSpace(stdErr.String()))
+		}
+		fmt.Println("Group tagged successfully.")
 		return nil
 	},
 }
@@ -88,8 +95,30 @@ var addMemberCmd = &cobra.Command{
 	},
 }
 
+var listGroupsCmd = &cobra.Command{
+	Use:   "listgroups",
+	Short: "List all group chats you have access to",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := auth.EnsureScope("repo"); err != nil {
+			return err
+		}
+		stdOut, stdErr, err := gh.Exec("api", "search/repositories?q=topic:chat-over-git-repo&per_page=100", "--jq", ".items[].full_name")
+		if err != nil {
+			return fmt.Errorf("failed to list groups: %v\nStderr: %s", err, stdErr.String())
+		}
+		output := strings.TrimSpace(stdOut.String())
+		if output == "" {
+			fmt.Println("No groups found.")
+			return nil
+		}
+		fmt.Print(output)
+		return nil
+	},
+}
+
 func init() {
 	RootCmd.AddCommand(createGroupCmd)
 	RootCmd.AddCommand(deleteGroupCmd)
 	RootCmd.AddCommand(addMemberCmd)
+	RootCmd.AddCommand(listGroupsCmd)
 }
