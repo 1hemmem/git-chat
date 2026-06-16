@@ -44,8 +44,8 @@ func SendMessage(repoName, body string) error {
 		return err
 	}
 	localPath := repo.CachePath(repoFull)
-	if err := repo.CloneOrPull(repoFull, localPath); err != nil {
-		return fmt.Errorf("failed to clone/pull repository: %v", err)
+	if err := repo.EnsureCloned(repoFull, localPath); err != nil {
+		return fmt.Errorf("failed to clone repository: %v", err)
 	}
 	msgsDir := filepath.Join(localPath, "messages")
 	if err := os.MkdirAll(msgsDir, 0755); err != nil {
@@ -64,6 +64,8 @@ func SendMessage(repoName, body string) error {
 	if _, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("committing message failed")
 	}
+	cmd = exec.Command("git", "-C", localPath, "pull", "--rebase", "origin", "main")
+	cmd.Run()
 	cmd = exec.Command("git", "-C", localPath, "push", "origin", "main")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

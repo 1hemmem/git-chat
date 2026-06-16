@@ -38,22 +38,22 @@ func CachePath(repoFull string) string {
 func CloneOrPull(repoFull, localPath string) error {
 	if _, err := os.Stat(filepath.Join(localPath, ".git")); os.IsNotExist(err) {
 		cmd := exec.Command("gh", "repo", "clone", repoFull, localPath)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		_, err := cmd.CombinedOutput()
+		return err
 	}
-	cmd := exec.Command("git", "-C", localPath, "fetch", "origin")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git fetch failed: %v", err)
+	cmd := exec.Command("git", "-C", localPath, "pull", "--rebase", "origin", "main")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git pull failed: %s", strings.TrimSpace(string(out)))
 	}
-	cmd = exec.Command("git", "-C", localPath, "checkout", "main")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
-	cmd = exec.Command("git", "-C", localPath, "reset", "--hard", "origin/main")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return nil
+}
+
+func EnsureCloned(repoFull, localPath string) error {
+	if _, err := os.Stat(filepath.Join(localPath, ".git")); os.IsNotExist(err) {
+		cmd := exec.Command("gh", "repo", "clone", repoFull, localPath)
+		_, err := cmd.CombinedOutput()
+		return err
+	}
+	return nil
 }
