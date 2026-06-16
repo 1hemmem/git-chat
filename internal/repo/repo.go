@@ -29,6 +29,25 @@ func ResolveRepo(repo string) string {
 	return username + "/" + repo
 }
 
+func ResolveGroup(repoName string) (string, error) {
+	if strings.Contains(repoName, "/") {
+		return repoName, nil
+	}
+	query := fmt.Sprintf("search/repositories?q=topic:chat-over-git-repo+%s+in:name&per_page=10", repoName)
+	stdOut, _, err := gh.Exec("api", query, "--jq", ".items[].full_name")
+	if err != nil {
+		return "", fmt.Errorf("failed to search for group %q", repoName)
+	}
+	matches := strings.Fields(strings.TrimSpace(stdOut.String()))
+	for _, m := range matches {
+		parts := strings.SplitN(m, "/", 2)
+		if len(parts) == 2 && parts[1] == repoName {
+			return m, nil
+		}
+	}
+	return "", fmt.Errorf("group %q not found\nRun 'git-chat listgroups' to see available groups", repoName)
+}
+
 func CachePath(repoFull string) string {
 	parts := strings.SplitN(repoFull, "/", 2)
 	home, _ := os.UserHomeDir()

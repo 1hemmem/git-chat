@@ -51,6 +51,10 @@ var deleteGroupCmd = &cobra.Command{
 		if err := auth.EnsureScope("delete_repo"); err != nil {
 			return err
 		}
+		repoFull, err := repo.ResolveGroup(repoName)
+		if err != nil {
+			return err
+		}
 		fmt.Printf("Are you sure you want to delete this group : '%s'? This action cannot be undone. [y/N]: ", repoName)
 		reader := bufio.NewReader(os.Stdin)
 		input, err := reader.ReadString('\n')
@@ -62,14 +66,14 @@ var deleteGroupCmd = &cobra.Command{
 			fmt.Println("Deletion cancelled.")
 			return nil
 		}
-		fmt.Printf("Deleting repository: %s...\n", repoName)
-		_, stdErr, err := gh.Exec("repo", "delete", repoName, "--yes")
+		fmt.Printf("Deleting repository: %s...\n", repoFull)
+		_, stdErr, err := gh.Exec("repo", "delete", repoFull, "--yes")
 		if err != nil {
 			stderr := stdErr.String()
 			if strings.Contains(stderr, "not found") || strings.Contains(stderr, "Not Found") {
-				return fmt.Errorf("repository %q not found — check the name or list groups with: git-chat listgroups", repoName)
+				return fmt.Errorf("repository %q not found — check the name or list groups with: git-chat listgroups", repoFull)
 			}
-			return fmt.Errorf("deleting repository %q failed", repoName)
+			return fmt.Errorf("deleting repository %q failed", repoFull)
 		}
 		fmt.Println("Repository deleted successfully.")
 		return nil
@@ -86,10 +90,12 @@ var addMemberCmd = &cobra.Command{
 		if err := auth.EnsureScope("repo"); err != nil {
 			return err
 		}
-		owner, err := repo.GetGitHubUsername()
+		repoFull, err := repo.ResolveGroup(repoName)
 		if err != nil {
 			return err
 		}
+		parts := strings.SplitN(repoFull, "/", 2)
+		owner := parts[0]
 		fmt.Printf("Adding %s to %s...\n", username, repoName)
 		path := fmt.Sprintf("repos/%s/%s/collaborators/%s", owner, repoName, username)
 		_, _, err = gh.Exec("api", path, "-X", "PUT", "-f", "permission=push")

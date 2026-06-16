@@ -38,14 +38,17 @@ type model struct {
 	textinput textinput.Model
 }
 
-func initialModel(repoName string) model {
+func initialModel(repoName string) (model, error) {
 	ti := textinput.New()
 	ti.Placeholder = "Type a message..."
 	ti.Focus()
 
 	vp := viewport.New(80, 20)
 
-	repoFull := repo.ResolveRepo(repoName)
+	repoFull, err := repo.ResolveGroup(repoName)
+	if err != nil {
+		return model{}, err
+	}
 
 	return model{
 		repoName:  repoName,
@@ -53,7 +56,7 @@ func initialModel(repoName string) model {
 		sentOk:    make(map[string]bool),
 		textinput: ti,
 		viewport:  vp,
-	}
+	}, nil
 }
 
 func (m model) Init() tea.Cmd {
@@ -237,7 +240,11 @@ func sendMessage(repoName, body string) tea.Cmd {
 }
 
 func Run(repoName string) error {
-	p := tea.NewProgram(initialModel(repoName), tea.WithAltScreen())
-	_, err := p.Run()
+	m, err := initialModel(repoName)
+	if err != nil {
+		return err
+	}
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	_, err = p.Run()
 	return err
 }

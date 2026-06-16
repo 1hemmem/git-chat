@@ -38,7 +38,10 @@ func parseFilename(name string) (author, timestamp string, err error) {
 }
 
 func SendMessage(repoName, body string) error {
-	repoFull := repo.ResolveRepo(repoName)
+	repoFull, err := repo.ResolveGroup(repoName)
+	if err != nil {
+		return err
+	}
 	username, err := repo.GetGitHubUsername()
 	if err != nil {
 		return err
@@ -79,7 +82,10 @@ func SendMessage(repoName, body string) error {
 }
 
 func ReadMessages(repoName string) ([]Message, error) {
-	repoFull := repo.ResolveRepo(repoName)
+	repoFull, err := repo.ResolveGroup(repoName)
+	if err != nil {
+		return nil, err
+	}
 	localPath := repo.CachePath(repoFull)
 	if err := repo.CloneOrPull(repoFull, localPath); err != nil {
 		return nil, fmt.Errorf("failed to clone/pull repository: %v", err)
