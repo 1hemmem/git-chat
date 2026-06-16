@@ -22,7 +22,8 @@ type messagesMsg struct {
 type tickMsg time.Time
 
 type sendResultMsg struct {
-	err error
+	body string
+	err  error
 }
 
 type model struct {
@@ -30,6 +31,7 @@ type model struct {
 	repoFull  string
 	username  string
 	messages  []chat.Message
+	sentOk    map[string]bool
 	ready     bool
 	err       error
 	viewport  viewport.Model
@@ -48,6 +50,7 @@ func initialModel(repoName string) model {
 	return model{
 		repoName:  repoName,
 		repoFull:  repoFull,
+		sentOk:    make(map[string]bool),
 		textinput: ti,
 		viewport:  vp,
 	}
@@ -78,6 +81,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.messages = msg.msgs
+		for _, cm := range m.messages {
+			if cm.Author == m.username {
+				m.sentOk[cm.Body] = true
+			}
+		}
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
@@ -93,7 +101,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sendResultMsg:
 		if msg.err != nil {
 			m.err = msg.err
+			delete(m.sentOk, msg.body)
+			var kept []chat.Message
+			for _, cm := range m.messages {
+				if !(cm.Author == m.username && cm.Body == msg.body) {
+					kept = append(kept, cm)
+				}
+			}
+			m.messages = kept
+			m.viewport.SetContent(m.viewportContent())
+			m.viewport.GotoBottom()
+			return m, nil
 		}
+		m.sentOk[msg.body] = true
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -166,7 +188,18 @@ func (m model) viewportContent() string {
 		if err == nil {
 			displayTime = t.Local().Format("2006-01-02 15:04")
 		}
-		lines = append(lines, "["+displayTime+"] "+msg.Author+": "+msg.Body)
+		prefix := ""
+		if msg.Author == m.username {
+			delivered, exists := m.sentOk[msg.Body]
+			if !exists {
+				prefix = "~ "
+			} else if delivered {
+				prefix = "✓ "
+			} else {
+				prefix = ""
+			}
+		}
+		lines = append(lines, "["+displayTime+"] "+prefix+msg.Author+": "+msg.Body)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -199,7 +232,7 @@ func tickCmd() tea.Cmd {
 func sendMessage(repoName, body string) tea.Cmd {
 	return func() tea.Msg {
 		err := chat.SendMessage(repoName, body)
-		return sendResultMsg{err}
+		return sendResultMsg{body: body, err: err}
 	}
 }
 
