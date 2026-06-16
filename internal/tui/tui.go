@@ -88,7 +88,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.username = msg.username
 
 	case tickMsg:
-		return m, fetchMessages(m.repoName)
+		return m, tea.Batch(fetchMessages(m.repoName), tickCmd())
 
 	case sendResultMsg:
 		if msg.err != nil {
