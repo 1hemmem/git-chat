@@ -5,6 +5,7 @@ import (
 )
 
 var RootCmd = &cobra.Command{
-	Use:   "git-chat",
-	Short: "A CLI tool for GitHub repo management",
+	Use:          "git-chat",
+	Short:        "A CLI tool for GitHub repo management",
+	SilenceUsage: true,
 }

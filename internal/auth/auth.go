@@ -54,7 +54,7 @@ func EnsureScope(scope string) error {
 		}
 		input = strings.TrimSpace(strings.ToLower(input))
 		if input != "y" && input != "yes" {
-			return fmt.Errorf("not authenticated. Run:\n  gh auth login -s repo -s delete_repo")
+			return fmt.Errorf("not authenticated. Run:\n  git-chat auth refresh repo delete_repo")
 		}
 		fmt.Println("Opening browser for authentication. Please complete the flow to continue.")
 		cmd := exec.Command("gh", "auth", "login", "-s", "repo", "-s", "delete_repo")
@@ -79,7 +79,7 @@ func EnsureScope(scope string) error {
 	}
 	input = strings.TrimSpace(strings.ToLower(input))
 	if input != "y" && input != "yes" {
-		return fmt.Errorf("required scope '%s' not granted. Run:\n  gh auth refresh -h github.com -s %s", scope, scope)
+		return fmt.Errorf("required scope '%s' not granted. Run:\n  git-chat auth refresh %s", scope, scope)
 	}
 	fmt.Println("Refreshing GitHub auth...")
 	fmt.Println("Opening browser for authentication. Please complete the flow to continue.")

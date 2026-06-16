@@ -3,7 +3,6 @@ package cmd
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -26,14 +25,17 @@ var createGroupCmd = &cobra.Command{
 		fmt.Printf("Creating repository: %s...\n", repoName)
 		_, stdErr, err := gh.Exec("repo", "create", repoName, "--private")
 		if err != nil {
-			log.Fatalf("Error creating repo: %v\nStderr: %s", err, stdErr.String())
+			stderr := stdErr.String()
+			if strings.Contains(stderr, "already exists") {
+				return fmt.Errorf("repository %q already exists", repoName)
+			}
+			return fmt.Errorf("creating repository %q failed", repoName)
 		}
 		fmt.Println("Repository created successfully.")
 		repoFull := repo.ResolveRepo(repoName)
-		_, stdErr, err = gh.Exec("repo", "edit", repoFull, "--add-topic", "chat-over-git-repo")
+		_, _, err = gh.Exec("repo", "edit", repoFull, "--add-topic", "chat-over-git-repo")
 		if err != nil {
-			// log.Fatalf("Error tagging repo: %v\nStderr: %s", err, stdErr.String())
-			return fmt.Errorf("creating repo: %s", strings.TrimSpace(stdErr.String()))
+			return fmt.Errorf("tagging repository %q as a group chat failed", repoName)
 		}
 		fmt.Println("Group tagged successfully.")
 		return nil
@@ -63,7 +65,11 @@ var deleteGroupCmd = &cobra.Command{
 		fmt.Printf("Deleting repository: %s...\n", repoName)
 		_, stdErr, err := gh.Exec("repo", "delete", repoName, "--yes")
 		if err != nil {
-			log.Fatalf("Error deleting repo: %v\nStderr: %s", err, stdErr.String())
+			stderr := stdErr.String()
+			if strings.Contains(stderr, "not found") || strings.Contains(stderr, "Not Found") {
+				return fmt.Errorf("repository %q not found — check the name or list groups with: git-chat listgroups", repoName)
+			}
+			return fmt.Errorf("deleting repository %q failed", repoName)
 		}
 		fmt.Println("Repository deleted successfully.")
 		return nil
@@ -102,9 +108,9 @@ var listGroupsCmd = &cobra.Command{
 		if err := auth.EnsureScope("repo"); err != nil {
 			return err
 		}
-		stdOut, stdErr, err := gh.Exec("api", "search/repositories?q=topic:chat-over-git-repo&per_page=100", "--jq", ".items[].full_name")
+		stdOut, _, err := gh.Exec("api", "search/repositories?q=topic:chat-over-git-repo&per_page=100", "--jq", ".items[].full_name")
 		if err != nil {
-			return fmt.Errorf("failed to list groups: %v\nStderr: %s", err, stdErr.String())
+			return fmt.Errorf("listing groups failed")
 		}
 		output := strings.TrimSpace(stdOut.String())
 		if output == "" {

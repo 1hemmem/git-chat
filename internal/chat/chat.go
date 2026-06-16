@@ -57,16 +57,21 @@ func SendMessage(repoName, body string) error {
 		return fmt.Errorf("failed to write message: %v", err)
 	}
 	cmd := exec.Command("git", "-C", localPath, "add", "messages/"+filename)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git add failed: %v\n%s", err, out)
+	if _, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("staging message failed")
 	}
 	cmd = exec.Command("git", "-C", localPath, "commit", "-m", fmt.Sprintf("message from %s", username))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git commit failed: %v\n%s", err, out)
+	if _, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("committing message failed")
 	}
 	cmd = exec.Command("git", "-C", localPath, "push", "origin", "main")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git push failed: %v\n%s", err, out)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := string(out)
+		if strings.Contains(msg, "Permission denied") || strings.Contains(msg, "403") {
+			return fmt.Errorf("push denied — you don't have write access to this group")
+		}
+		return fmt.Errorf("pushing message failed")
 	}
 	return nil
 }
