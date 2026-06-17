@@ -74,7 +74,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		headerHeight := 3
 		footerHeight := 3
 		m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
-		m.viewport.SetContent(m.viewportContent())
+		m.viewport.SetContent("Loading messages...")
 		m.textinput.Width = msg.Width
 		m.ready = true
 		m.viewport.GotoBottom()
