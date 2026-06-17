@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,6 +13,37 @@ import (
 
 	"git-chat/internal/chat"
 	"git-chat/internal/repo"
+)
+
+var (
+	borderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("8"))
+
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("14"))
+
+	sepStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8"))
+
+	inputBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("8")).
+			Padding(0, 1)
+
+	timeStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8"))
+
+	authorColors = []lipgloss.Color{"3", "4", "5", "6", "9", "10", "11", "13"}
+
+	statusStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			Italic(true)
+
+	promptStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("14")).
+			Bold(true)
 )
 
 type messagesMsg struct {
@@ -34,6 +66,7 @@ type model struct {
 	sentOk    map[string]bool
 	ready     bool
 	err       error
+	spinner   spinner.Model
 	viewport  viewport.Model
 	textinput textinput.Model
 }
@@ -42,8 +75,14 @@ func initialModel(repoName string) (model, error) {
 	ti := textinput.New()
 	ti.Placeholder = "Type a message..."
 	ti.Focus()
+	ti.Prompt = ""
 
 	vp := viewport.New(80, 20)
+	vp.Style = lipgloss.NewStyle().Padding(0, 1)
+
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 
 	repoFull, err := repo.ResolveGroup(repoName)
 	if err != nil {
@@ -54,6 +93,7 @@ func initialModel(repoName string) (model, error) {
 		repoName:  repoName,
 		repoFull:  repoFull,
 		sentOk:    make(map[string]bool),
+		spinner:   sp,
 		textinput: ti,
 		viewport:  vp,
 	}, nil
@@ -64,6 +104,7 @@ func (m model) Init() tea.Cmd {
 		fetchMessages(m.repoFull),
 		fetchUsername(),
 		tickCmd(),
+		m.spinner.Tick,
 	)
 }
 
@@ -71,11 +112,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
-		headerHeight := 3
-		footerHeight := 3
-		m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
-		m.viewport.SetContent("Loading messages...")
-		m.textinput.Width = msg.Width
+		contentWidth := msg.Width - 4
+		headerHeight := 2
+		footerHeight := 5
+		m.viewport = viewport.New(contentWidth, msg.Height-headerHeight-footerHeight)
+		m.viewport.Style = lipgloss.NewStyle().Padding(0, 1)
+		m.viewport.SetContent(m.loadingView())
+		m.textinput.Width = contentWidth - 2
 		m.ready = true
 		m.viewport.GotoBottom()
 
@@ -160,7 +203,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, localMsg)
 			m.viewport.SetContent(m.viewportContent())
 			m.viewport.GotoBottom()
-		return m, sendMessage(m.repoFull, body)
+			return m, sendMessage(m.repoFull, body)
+		}
+
+	default:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		if cmd != nil {
+			return m, cmd
 		}
 	}
 
@@ -176,53 +226,69 @@ func (m model) View() string {
 		return "Loading...\n"
 	}
 	if m.err != nil {
-		return fmt.Sprintf("Error: %v\n", m.err)
+		return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("1")).Render(fmt.Sprintf(" Error: %v ", m.err))
 	}
 
-	title := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12")).
-		Padding(0, 1).
-		Render("Git Chat — " + m.repoFull)
+	title := titleStyle.Render(" Git Chat ") + sepStyle.Render("·") + titleStyle.Render(" "+m.repoFull+" ")
 
-	sep := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(lipgloss.Color("8")).
-		Render(strings.Repeat(" ", m.viewport.Width))
+	status := fmt.Sprintf(" %d messages  │  Enter: send  │  Esc: quit ", len(m.messages))
+	if len(m.messages) == 0 {
+		status = "  No messages yet  │  Enter: send  │  Esc: quit "
+	}
+	status = statusStyle.Render(status)
 
-	return lipgloss.JoinVertical(
+	v := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
-		sep,
 		m.viewport.View(),
-		sep,
-		m.textinput.View(),
+		inputBoxStyle.Render(promptStyle.Render("✎  ")+" "+m.textinput.View()),
+		status,
 	)
+
+	return borderStyle.Render(v)
+}
+
+func (m model) loadingView() string {
+	s := m.spinner.View() + " Loading messages..."
+	return lipgloss.NewStyle().Padding(1).Render(s)
 }
 
 func (m model) viewportContent() string {
 	if len(m.messages) == 0 {
-		return "No messages yet."
+		return lipgloss.NewStyle().Padding(1).Foreground(lipgloss.Color("8")).Render("No messages yet.")
 	}
 	var lines []string
+	authorStyles := make(map[string]lipgloss.Style)
+	colorIdx := 0
 	for _, msg := range m.messages {
+		if _, ok := authorStyles[msg.Author]; !ok {
+			authorStyles[msg.Author] = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(authorColors[colorIdx%len(authorColors)])
+			colorIdx++
+		}
+		aStyle := authorStyles[msg.Author]
+
 		t, err := time.Parse("20060102T150405Z", msg.Timestamp)
 		displayTime := msg.Timestamp
 		if err == nil {
-			displayTime = t.Local().Format("2006-01-02 15:04")
+			displayTime = t.Local().Format("15:04")
 		}
-		prefix := ""
+
+		prefix := "  "
 		if msg.Author == m.username {
 			delivered, exists := m.sentOk[msg.Body]
 			if !exists {
 				prefix = "~ "
 			} else if delivered {
-				prefix = "✓ "
+				prefix = promptStyle.Bold(true).Render("✓") + " "
 			} else {
-				prefix = ""
+				prefix = "  "
 			}
 		}
-		lines = append(lines, "["+displayTime+"] "+prefix+msg.Author+": "+msg.Body)
+
+		line := timeStyle.Render(displayTime) + " " + prefix + aStyle.Render(msg.Author) + " " + msg.Body
+		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
 }
