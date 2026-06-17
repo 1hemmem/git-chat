@@ -76,3 +76,24 @@ func EnsureCloned(repoFull, localPath string) error {
 	}
 	return nil
 }
+
+func PullIfNew(repoFull, localPath string) (bool, error) {
+	if err := EnsureCloned(repoFull, localPath); err != nil {
+		return false, err
+	}
+	cmd := exec.Command("git", "-C", localPath, "fetch", "origin")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		return false, nil
+	}
+	cmd = exec.Command("git", "-C", localPath, "rev-list", "--count", "HEAD..origin/main")
+	count, _ := cmd.CombinedOutput()
+	if strings.TrimSpace(string(count)) == "0" {
+		return false, nil
+	}
+	cmd = exec.Command("git", "-C", localPath, "pull", "--rebase", "origin", "main")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("git pull failed: %s", strings.TrimSpace(string(out)))
+	}
+	return true, nil
+}

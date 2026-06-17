@@ -61,7 +61,7 @@ func initialModel(repoName string) (model, error) {
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
-		fetchMessages(m.repoName),
+		fetchMessages(m.repoFull),
 		fetchUsername(),
 		tickCmd(),
 	)
@@ -99,7 +99,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.username = msg.username
 
 	case tickMsg:
-		return m, tea.Batch(fetchMessages(m.repoName), tickCmd())
+		return m, tea.Batch(fetchMessages(m.repoFull), tickCmd())
 
 	case sendResultMsg:
 		if msg.err != nil {
@@ -140,7 +140,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, localMsg)
 			m.viewport.SetContent(m.viewportContent())
 			m.viewport.GotoBottom()
-			return m, sendMessage(m.repoName, body)
+		return m, sendMessage(m.repoFull, body)
 		}
 	}
 
@@ -219,22 +219,24 @@ func fetchUsername() tea.Cmd {
 	}
 }
 
-func fetchMessages(repoName string) tea.Cmd {
+func fetchMessages(repoFull string) tea.Cmd {
 	return func() tea.Msg {
-		msgs, err := chat.ReadMessages(repoName)
+		localPath := repo.CachePath(repoFull)
+		repo.PullIfNew(repoFull, localPath)
+		msgs, err := chat.ReadMessagesFromCache(localPath)
 		return messagesMsg{msgs, err}
 	}
 }
 
 func tickCmd() tea.Cmd {
-	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
-func sendMessage(repoName, body string) tea.Cmd {
+func sendMessage(repoFull, body string) tea.Cmd {
 	return func() tea.Msg {
-		err := chat.SendMessage(repoName, body)
+		err := chat.SendMessage(repoFull, body)
 		return sendResultMsg{body: body, err: err}
 	}
 }

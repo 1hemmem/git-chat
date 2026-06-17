@@ -90,7 +90,14 @@ func ReadMessages(repoName string) ([]Message, error) {
 	if err := repo.CloneOrPull(repoFull, localPath); err != nil {
 		return nil, fmt.Errorf("failed to clone/pull repository: %v", err)
 	}
-	msgsDir := filepath.Join(localPath, "messages")
+	return readFromDir(filepath.Join(localPath, "messages"))
+}
+
+func ReadMessagesFromCache(localPath string) ([]Message, error) {
+	return readFromDir(filepath.Join(localPath, "messages"))
+}
+
+func readFromDir(msgsDir string) ([]Message, error) {
 	entries, err := os.ReadDir(msgsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
