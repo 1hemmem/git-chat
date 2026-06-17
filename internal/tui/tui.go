@@ -83,10 +83,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m, nil
 		}
+		var pending []chat.Message
+		for _, cm := range m.messages {
+			if cm.Author == m.username {
+				if _, ok := m.sentOk[cm.Body]; !ok {
+					pending = append(pending, cm)
+				}
+			}
+		}
 		m.messages = msg.msgs
 		for _, cm := range m.messages {
 			if cm.Author == m.username {
 				m.sentOk[cm.Body] = true
+			}
+		}
+		for _, p := range pending {
+			found := false
+			for _, cm := range m.messages {
+				if cm.Author == p.Author && cm.Body == p.Body {
+					found = true
+					break
+				}
+			}
+			if !found {
+				m.messages = append(m.messages, p)
 			}
 		}
 		m.viewport.SetContent(m.viewportContent())
