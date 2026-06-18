@@ -8,7 +8,7 @@ import (
 )
 
 var openCmd = &cobra.Command{
-	Use:   "open",
+	Use:   "open <group_name>",
 	Short: "Open a TUI for a specific group chat",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

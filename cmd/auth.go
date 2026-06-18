@@ -17,7 +17,7 @@ var authCmd = &cobra.Command{
 var authRefreshCmd = &cobra.Command{
 	Use:   "refresh [scopes...]",
 	Short: "Refresh GitHub auth with additional scopes",
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Refreshing auth with scopes: %s...\n", strings.Join(args, ", "))
 		fmt.Println("Opening browser for authentication. Please complete the flow to continue.")
