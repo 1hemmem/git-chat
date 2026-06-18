@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/cli/go-gh/v2"
@@ -12,6 +14,30 @@ import (
 	"git-chat/internal/auth"
 	"git-chat/internal/repo"
 )
+
+const readmeTemplate = `# %s
+
+This repository is a group chat managed by [git-chat](https://github.com/1hemmem/git-chat).
+
+## Getting Started
+
+1. Install git-chat:
+   ` + "```" + `
+   git clone https://github.com/1hemmem/git-chat.git
+   cd git-chat && make install
+   ` + "```" + `
+
+2. Authenticate with GitHub:
+   ` + "```" + `
+   git-chat auth refresh
+   ` + "```" + `
+
+3. Open the live-chat TUI:
+   ` + "```" + `
+   git-chat open %s
+   ` + "```" + `
+
+`
 
 var createGroupCmd = &cobra.Command{
 	Use:   "creategroup <group_name>",
@@ -38,6 +64,34 @@ var createGroupCmd = &cobra.Command{
 			return fmt.Errorf("tagging repository %q as a group chat failed", repoName)
 		}
 		fmt.Println("Group tagged successfully.")
+
+		localPath := repo.CachePath(repoFull)
+		if err := repo.EnsureCloned(repoFull, localPath); err != nil {
+			return fmt.Errorf("failed to clone repository: %v", err)
+		}
+
+		readmePath := filepath.Join(localPath, "README.md")
+		readmeContent := fmt.Sprintf(readmeTemplate, repoName, repoName)
+		if err := os.WriteFile(readmePath, []byte(readmeContent), 0o644); err != nil {
+			return fmt.Errorf("failed to write README.md: %v", err)
+		}
+
+		gitCmd := exec.Command("git", "-C", localPath, "add", "README.md")
+		if _, err := gitCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to stage README.md: %v", err)
+		}
+
+		gitCmd = exec.Command("git", "-C", localPath, "commit", "-m", "Initial commit with README.md")
+		if _, err := gitCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to commit README.md: %v", err)
+		}
+
+		gitCmd = exec.Command("git", "-C", localPath, "push", "origin", "main")
+		if _, err := gitCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to push README.md: %v", err)
+		}
+
+		fmt.Println("Initial README.md committed and pushed.")
 		return nil
 	},
 }
